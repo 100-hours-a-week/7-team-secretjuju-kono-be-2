@@ -1,0 +1,28 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Build Docker Image
+        run: docker build -t my-backend .
+
+      - name: Push Docker Image
+        run: docker tag my-backend my-dockerhub/my-backend:latest && docker push my-dockerhub/my-backend:latest
+
+      - name: Deploy to EC2
+        run: |
+          ssh -o StrictHostKeyChecking=no ubuntu@{your-ec2-ip} << 'EOF'
+            docker pull my-dockerhub/my-backend:latest
+            docker stop backend_container || true
+            docker rm backend_container || true
+            docker run -d --name backend_container -p 8080:8080 my-dockerhub/my-backend:latest
+          EOF

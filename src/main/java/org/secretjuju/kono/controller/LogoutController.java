@@ -24,7 +24,7 @@ public class LogoutController {
 		SecurityContextHolder.clearContext();
 
 		// JSESSIONID 쿠키 삭제
-		jakarta.servlet.http.Cookie cookie = new jakarta.servlet.http.Cookie("JSESSIONID", null);
+		jakarta.servlet.http.Cookie cookie = new jakarta.servlet.http.Cookie("SESSIONID", null);
 		cookie.setPath("/");
 		cookie.setHttpOnly(true);
 		cookie.setMaxAge(0); // 즉시 만료

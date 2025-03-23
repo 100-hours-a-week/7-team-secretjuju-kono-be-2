@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.Map;
 
+import org.secretjuju.kono.entity.CashBalance;
 import org.secretjuju.kono.entity.User;
 import org.secretjuju.kono.repository.UserRepository;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -52,6 +53,20 @@ public class OAuth2UserService extends DefaultOAuth2UserService {
 		user.setCreatedAt(LocalDateTime.now());
 
 		log.info("New user saved: {}", nickname);
+		// 2. 사용자 엔티티 먼저 저장 (ID 생성을 위해)
+		user = userRepository.save(user);
+
+		// 3. 현금 잔액 생성 및 연결
+		CashBalance cashBalance = new CashBalance();
+		cashBalance.setBalance(5000000L); // 500만원
+		cashBalance.setTotalInvest(0L); // 초기 투자금 0원
+		cashBalance.setUser(user); // 사용자 연결
+
+		// 4. 사용자에 현금 잔액 설정
+		user.setCashBalance(cashBalance);
+
+		// 5. 최종 저장 및 반환
+		log.info("New user saved: {}, initial cash balance: {}", nickname, cashBalance.getBalance());
 		return userRepository.save(user);
 	}
 }

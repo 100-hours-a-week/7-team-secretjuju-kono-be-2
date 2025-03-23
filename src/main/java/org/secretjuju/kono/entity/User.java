@@ -68,6 +68,14 @@ public class User {
 	@OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
 	private List<CoinFavorite> coinFavorites = new ArrayList<>();
 
+	@Builder.Default
+	@OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
+	private List<DailyRanking> dailyRankings = new ArrayList<>();
+
+	@Builder.Default
+	@OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
+	private List<TotalRanking> totalRankings = new ArrayList<>();
+
 	@PrePersist
 	public void prePersist() {
 		this.createdAt = LocalDateTime.now();
@@ -97,5 +105,10 @@ public class User {
 	public void addCoinFavorite(CoinFavorite coinFavorite) {
 		this.coinFavorites.add(coinFavorite);
 		coinFavorite.setUser(this);
+	}
+
+	public void addDailyRanking(DailyRanking dailyRanking) {
+		this.dailyRankings.add(dailyRanking);
+		dailyRanking.setUser(this);
 	}
 }

@@ -40,6 +40,7 @@ public class SecurityConfig {
 	private final OAuth2UserService oAuth2UserService;
 	private final ClientRegistrationRepository clientRegistrationRepository;
 	private final ObjectMapper objectMapper;
+	private final OAuth2SuccessHandler oauth2SuccessHandler;
 
 	@Bean
 	public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -54,7 +55,7 @@ public class SecurityConfig {
 								new AntPathRequestMatcher("/**")))
 				.oauth2Login(oauth2 -> oauth2.loginPage("/login")
 						.userInfoEndpoint(userInfo -> userInfo.userService(oAuth2UserService))
-						.successHandler(successHandler())
+						.successHandler(oauth2SuccessHandler)
 						.authorizationEndpoint(authorization -> authorization
 								.authorizationRequestResolver(customAuthorizationRequestResolver()))
 						.defaultSuccessUrl("/main", true));
@@ -66,8 +67,7 @@ public class SecurityConfig {
 	public OAuth2AuthorizationRequestResolver customAuthorizationRequestResolver() {
 		DefaultOAuth2AuthorizationRequestResolver resolver = new DefaultOAuth2AuthorizationRequestResolver(
 				clientRegistrationRepository, "/oauth2/authorization");
-
-		// OAuth 요청 시 `prompt=login`을 추가하여 항상 로그인 창이 뜨도록 설정
+		// OAuth 요청 시 `prompt=login`을 추가하여 항상 로그인 창이 뜨도록 설정(세션테스트를 위해 설정함)
 		resolver.setAuthorizationRequestCustomizer(
 				customizer -> customizer.additionalParameters(params -> params.put("prompt", "login")));
 

@@ -43,10 +43,10 @@ public class SecurityConfig {
 
 	@Bean
 	public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-		http.csrf(AbstractHttpConfigurer::disable)
-				.authorizeHttpRequests(
-						auth -> auth.requestMatchers("/", "/login", "/logout", "/error", "/css/**", "/js/**")
-								.permitAll().requestMatchers("/api/**").authenticated().anyRequest().permitAll())
+		http.cors().and().csrf(AbstractHttpConfigurer::disable)
+				.authorizeHttpRequests(auth -> auth
+						.requestMatchers("/", "/login", "/logout", "/error", "/css/**", "/js/**", "/api/v1/auth/**")
+						.permitAll().requestMatchers("/api/**").authenticated().anyRequest().permitAll())
 				.exceptionHandling(exceptionHandling -> exceptionHandling
 						.defaultAuthenticationEntryPointFor(new CustomAuthenticationEntryPoint(objectMapper),
 								new AntPathRequestMatcher("/api/**"))
@@ -63,6 +63,20 @@ public class SecurityConfig {
 	}
 
 	@Bean
+	public CorsConfigurationSource corsConfigurationSource() {
+		CorsConfiguration configuration = new CorsConfiguration();
+		configuration.setAllowedOrigins(Arrays.asList("http://localhost:5173"));
+		configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"));
+		configuration.setAllowedHeaders(Arrays.asList("*"));
+		configuration.setAllowCredentials(true);
+		configuration.setMaxAge(3600L);
+
+		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+		source.registerCorsConfiguration("/**", configuration);
+		return source;
+	}
+
+	@Bean
 	public OAuth2AuthorizationRequestResolver customAuthorizationRequestResolver() {
 		DefaultOAuth2AuthorizationRequestResolver resolver = new DefaultOAuth2AuthorizationRequestResolver(
 				clientRegistrationRepository, "/oauth2/authorization");
@@ -72,19 +86,6 @@ public class SecurityConfig {
 				customizer -> customizer.additionalParameters(params -> params.put("prompt", "login")));
 
 		return resolver;
-	}
-
-	@Bean
-	public CorsConfigurationSource corsConfigurationSource() {
-		CorsConfiguration configuration = new CorsConfiguration();
-		configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000")); // 프론트엔드 주소
-		configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-		configuration.setAllowedHeaders(Arrays.asList("*"));
-		configuration.setAllowCredentials(true);
-
-		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-		source.registerCorsConfiguration("/**", configuration);
-		return source;
 	}
 
 	// 로그인 성공 후 실행되는 핸들러

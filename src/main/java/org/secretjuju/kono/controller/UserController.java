@@ -1,6 +1,8 @@
 package org.secretjuju.kono.controller;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.secretjuju.kono.dto.request.NicknameUpdateRequest;
 import org.secretjuju.kono.dto.request.UserRequestDto;
@@ -12,8 +14,10 @@ import org.secretjuju.kono.exception.NicknameAlreadyExistsException;
 import org.secretjuju.kono.exception.PermissionDeniedException;
 import org.secretjuju.kono.exception.UnauthorizedException;
 import org.secretjuju.kono.exception.UserNotFoundException;
+import org.secretjuju.kono.repository.UserRepository;
 import org.secretjuju.kono.service.CoinFavoriteService;
 import org.secretjuju.kono.service.UserService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.core.user.OAuth2User;
@@ -32,21 +36,38 @@ public class UserController {
 
 	private final UserService userService;
 	private final CoinFavoriteService coinFavoriteService;
-	public UserController(UserService userService, CoinFavoriteService coinFavoriteService) {
+	private final UserRepository userRepository;
+
+	public UserController(UserService userService, CoinFavoriteService coinFavoriteService,
+			UserRepository userRepository) {
 		this.userService = userService;
 		this.coinFavoriteService = coinFavoriteService;
+		this.userRepository = userRepository;
 	}
-
+	@CrossOrigin(origins = "http://localhost:5173")
 	@GetMapping("/me")
-	public ResponseEntity<UserResponseDto> getCurrentUser(@AuthenticationPrincipal OAuth2User oauth2User) {
+	public ResponseEntity<?> getCurrentUser(@AuthenticationPrincipal OAuth2User oauth2User) {
 		if (oauth2User == null) {
-			return ResponseEntity.status(401).build();
+			return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "로그인이 필요합니다."));
 		}
 
-		Long kakaoId = Long.valueOf(oauth2User.getAttribute("id").toString());
-		UserResponseDto userInfo = userService.getUserInfo(kakaoId);
+		// OAuth2User에서 카카오 ID 추출
+		Long kakaoId = Long.valueOf(oauth2User.getName());
 
-		return ResponseEntity.ok(userInfo);
+		// 데이터베이스에서 사용자 정보 조회
+		return userRepository.findByKakaoId(kakaoId).map(user -> {
+			Map<String, Object> userInfo = new HashMap<>();
+			userInfo.put("id", user.getId());
+			userInfo.put("nickname", user.getNickname());
+			userInfo.put("profileImage", user.getProfileImageUrl());
+
+			if (user.getCashBalance() != null) {
+				userInfo.put("cashBalance", user.getCashBalance().getBalance());
+				userInfo.put("totalInvest", user.getCashBalance().getTotalInvest());
+			}
+
+			return ResponseEntity.ok(userInfo);
+		}).orElse(ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "사용자를 찾을 수 없습니다.")));
 	}
 
 	@GetMapping("")
@@ -210,6 +231,23 @@ public class UserController {
 
 		} catch (Exception e) {
 			log.error("회원탈퇴 처리 중 오류 발생", e);
+			return ResponseEntity.status(500).build();
+		}
+	}
+
+	// 로그아웃
+	@PostMapping("/logout")
+	public ResponseEntity<Void> logout(HttpSession session) {
+		try {
+			// 세션 무효화
+			if (session != null) {
+				log.info("로그아웃 요청: 세션 ID={}", session.getId());
+				session.invalidate();
+			}
+
+			return ResponseEntity.ok().build();
+		} catch (Exception e) {
+			log.error("로그아웃 처리 중 오류 발생", e);
 			return ResponseEntity.status(500).build();
 		}
 	}

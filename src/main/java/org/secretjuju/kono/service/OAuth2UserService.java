@@ -2,6 +2,7 @@ package org.secretjuju.kono.service;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 
 import org.secretjuju.kono.entity.CashBalance;
@@ -41,8 +42,25 @@ public class OAuth2UserService extends DefaultOAuth2UserService {
 		User user = userRepository.findByKakaoId(kakaoId).orElseGet(() -> saveUser(kakaoId, nickname, profileImageUrl));
 
 		log.info("User logged in: {}", user.getNickname());
-		// SecurityContext에 저장될 사용자 객체 반환
-		return new DefaultOAuth2User(Collections.singleton(new SimpleGrantedAuthority("ROLE_USER")), attributes, "id");
+
+		// 새로운 속성 맵 생성 (기존 속성 + 우리 DB의 정보)
+		Map<String, Object> enhancedAttributes = new HashMap<>(attributes);
+
+		// 중요: 우리 DB의 사용자 정보 추가
+		enhancedAttributes.put("user_id", user.getId());
+		enhancedAttributes.put("internal_nickname", user.getNickname());
+		enhancedAttributes.put("profile_url", user.getProfileImageUrl());
+
+		// 현금 잔액 정보 추가
+		if (user.getCashBalance() != null) {
+			enhancedAttributes.put("cash_balance", user.getCashBalance().getBalance());
+			enhancedAttributes.put("total_invest", user.getCashBalance().getTotalInvest());
+		}
+
+		// 확장된 속성을 가진 OAuth2User 반환
+		return new DefaultOAuth2User(Collections.singleton(new SimpleGrantedAuthority("ROLE_USER")), enhancedAttributes,
+				"id" // 여전히 카카오 ID를 기본 이름으로 사용
+		);
 	}
 
 	private User saveUser(Long kakaoId, String nickname, String profileImageUrl) {

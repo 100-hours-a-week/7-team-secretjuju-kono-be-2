@@ -1,32 +1,31 @@
 package org.secretjuju.kono.config;
 
-import java.io.PrintWriter;
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import java.util.Map;
 
-import org.secretjuju.kono.security.CustomAuthenticationEntryPoint;
 import org.secretjuju.kono.service.OAuth2UserService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.session.SessionRegistry;
+import org.springframework.security.core.session.SessionRegistryImpl;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
-import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.firewall.HttpFirewall;
 import org.springframework.security.web.firewall.StrictHttpFirewall;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
-import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.security.web.util.matcher.RequestHeaderRequestMatcher;
 import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -41,75 +40,68 @@ public class SecurityConfig {
 	private final ClientRegistrationRepository clientRegistrationRepository;
 	private final ObjectMapper objectMapper;
 	private final OAuth2SuccessHandler oauth2SuccessHandler;
+	private final Environment environment;
+	private final CorsConfigurationSource corsConfigurationSource; // CorsConfig에서 제공하는 빈 주입
 
 	@Bean
 	public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-		http.csrf(AbstractHttpConfigurer::disable)
-				.authorizeHttpRequests(
-						auth -> auth.requestMatchers("/", "/login", "/logout", "/error", "/css/**", "/js/**")
-								.permitAll().requestMatchers("/api/**").authenticated().anyRequest().permitAll())
+		http.csrf(csrf -> csrf.disable()).cors(cors -> cors.configurationSource(corsConfigurationSource)) // 주입된 CORS 설정
+																											// 사용
+
+				// 1. 요청 경로별 인증 설정
+				.authorizeHttpRequests(auth -> auth.requestMatchers("/", "/login", "/error", "/css/**", "/js/**")
+						.permitAll().requestMatchers("/api/**").authenticated().anyRequest().permitAll())
+
+				// 2. 인증 처리 분리: API vs 웹 페이지
 				.exceptionHandling(exceptionHandling -> exceptionHandling
-						.defaultAuthenticationEntryPointFor(new CustomAuthenticationEntryPoint(objectMapper),
+						// API 요청에 대한 인증 실패 처리 - 401 응답
+						.defaultAuthenticationEntryPointFor(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
+								new RequestHeaderRequestMatcher("Accept", MediaType.APPLICATION_JSON_VALUE))
+						// API 경로에 대한 인증 실패 처리 - 401 응답
+						.defaultAuthenticationEntryPointFor(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
 								new AntPathRequestMatcher("/api/**"))
+						// 일반 웹 요청에 대한 인증 실패 처리 - 로그인 페이지 리다이렉션
 						.defaultAuthenticationEntryPointFor(new LoginUrlAuthenticationEntryPoint("/login"),
 								new AntPathRequestMatcher("/**")))
+
+				// 3. 세션 관리 간소화 및 명확화
+				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.ALWAYS) // IF_REQUIRED에서
+																											// ALWAYS로
+																											// 변경
+						.maximumSessions(1).sessionRegistry(sessionRegistry()))
+
+				// 4. SecurityContext 저장소 설정 (세션에 SecurityContext 저장)
+				.securityContext(securityContext -> securityContext
+						.securityContextRepository(new HttpSessionSecurityContextRepository())
+						.requireExplicitSave(false) // 자동 저장 활성화
+				)
+
+				// 5. OAuth2 로그인 설정 - 간소화된 성공 핸들러 사용
 				.oauth2Login(oauth2 -> oauth2.loginPage("/login")
 						.userInfoEndpoint(userInfo -> userInfo.userService(oAuth2UserService))
-						.successHandler(oauth2SuccessHandler)
-						.authorizationEndpoint(authorization -> authorization
-								.authorizationRequestResolver(customAuthorizationRequestResolver()))
-						.defaultSuccessUrl("/main", true));
+						.successHandler(oauth2SuccessHandler));
 
 		return http.build();
 	}
 
 	@Bean
-	public OAuth2AuthorizationRequestResolver customAuthorizationRequestResolver() {
+	public OAuth2AuthorizationRequestResolver oauth2AuthorizationRequestResolver() {
 		DefaultOAuth2AuthorizationRequestResolver resolver = new DefaultOAuth2AuthorizationRequestResolver(
 				clientRegistrationRepository, "/oauth2/authorization");
-		// OAuth 요청 시 `prompt=login`을 추가하여 항상 로그인 창이 뜨도록 설정(세션테스트를 위해 설정함)
-		resolver.setAuthorizationRequestCustomizer(
-				customizer -> customizer.additionalParameters(params -> params.put("prompt", "login")));
+
+		// 개발 환경에서만 prompt=login 설정 적용
+		/*
+		 * if (isDevEnvironment()) { resolver.setAuthorizationRequestCustomizer(
+		 * customizer -> customizer.additionalParameters(params -> params.put("prompt",
+		 * "login"))); }
+		 */
 
 		return resolver;
 	}
 
-	@Bean
-	public CorsConfigurationSource corsConfigurationSource() {
-		CorsConfiguration configuration = new CorsConfiguration();
-		configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000")); // 프론트엔드 주소
-		configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-		configuration.setAllowedHeaders(Arrays.asList("*"));
-		configuration.setAllowCredentials(true);
-
-		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-		source.registerCorsConfiguration("/**", configuration);
-		return source;
-	}
-
-	// 로그인 성공 후 실행되는 핸들러
-	// 사용자 정보를 json형태로 응답
-	@Bean
-	public AuthenticationSuccessHandler successHandler() {
-		return ((request, response, authentication) -> {
-			DefaultOAuth2User defaultOAuth2User = (DefaultOAuth2User) authentication.getPrincipal();
-			Map<String, Object> attributes = defaultOAuth2User.getAttributes();
-
-			// 카카오 로그인 응답 확인을 위한 로그
-			System.out.println("Login Success - User Attributes: " + attributes);
-
-			// JSON 응답 생성
-			String body = """
-					{"success": true, "attributes": %s}
-					""".formatted(attributes.toString());
-
-			response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-			response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-
-			PrintWriter writer = response.getWriter();
-			writer.println(body);
-			writer.flush();
-		});
+	private boolean isDevEnvironment() {
+		return Arrays.asList(environment.getActiveProfiles()).contains("dev")
+				|| environment.getActiveProfiles().length == 0; // 프로필이 지정되지 않은 경우 개발 환경으로 간주
 	}
 
 	@Bean
@@ -117,5 +109,11 @@ public class SecurityConfig {
 		StrictHttpFirewall firewall = new StrictHttpFirewall();
 		firewall.setAllowSemicolon(true);
 		return firewall;
+	}
+
+	// 세션 레지스트리 빈 추가
+	@Bean
+	public SessionRegistry sessionRegistry() {
+		return new SessionRegistryImpl();
 	}
 }

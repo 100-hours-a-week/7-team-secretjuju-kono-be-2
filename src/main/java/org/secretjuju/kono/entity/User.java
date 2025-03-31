@@ -83,7 +83,10 @@ public class User {
 	// 양방향 관계를 위한 편의 메서드
 	public void addTransaction(CoinTransaction transaction) {
 		this.transactions.add(transaction);
-		transaction.setUser(this);
+		// setter 대신 새로운 transaction 객체 생성
+		CoinTransaction newTransaction = new CoinTransaction(this, transaction.getCoinInfo(),
+				transaction.getOrderType(), transaction.getOrderQuantity(), transaction.getOrderPrice(),
+				transaction.getOrderAmount(), transaction.getCreatedAt());
 	}
 
 	public void addBadge(Badge badge) {

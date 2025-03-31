@@ -25,7 +25,6 @@ spring:
             scope:
               - profile_nickname
               - profile_image
-
         provider:
           kakao:
             authorization-uri: https://kauth.kakao.com/oauth/authorize?prompt=login
@@ -69,6 +68,7 @@ thymeleaf:
   suffix: .html
   cache: false
   check-template-location: true
+
 mvc:
   view:
     prefix: /templates/
@@ -86,7 +86,7 @@ server:
     session:
       timeout: 30m  # 세션 만료 시간
       cookie:
-        name:   SESSIONID
+        name: SESSIONID
         http-only: true
         secure: false  # HTTPS 사용시 true로 변경
       tracking-modes: cookie  # URL 재작성 비활성화
@@ -103,3 +103,15 @@ upbit:
 custom:
   domain: https://dev.playkono.com
   production: true
+
+# 여기서부터 project
+project:
+  success-url:
+    main: ${SUCCESS_URL_MAIN:https://www.playkono.com}
+    dev:  ${SUCCESS_URL_DEV:https://dev.playkono.com}
+    local: ${SUCCESS_URL_LOCAL:http://localhost:5173}
+
+  allow-origin:
+    main: ${ALLOW_ORIGIN_MAIN:http://www.playkono.com}
+    dev:  ${ALLOW_ORIGIN_DEV:http://dev.playkono.com}
+    local: ${ALLOW_ORIGIN_LOCAL:http://localhost:5173}

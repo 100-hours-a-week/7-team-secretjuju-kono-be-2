@@ -7,6 +7,7 @@ import java.util.Map;
 
 import org.secretjuju.kono.security.CustomAuthenticationEntryPoint;
 import org.secretjuju.kono.service.OAuth2UserService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.MediaType;
@@ -41,6 +42,15 @@ public class SecurityConfig {
 	private final ClientRegistrationRepository clientRegistrationRepository;
 	private final ObjectMapper objectMapper;
 
+	@Value("${project.success-url.main}")
+	private String mainUrl;
+
+	@Value("${project.success-url.dev}")
+	private String devUrl;
+
+	@Value("${project.success-url.local}")
+	private String localUrl;
+
 	@Bean
 	public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 		http.csrf(AbstractHttpConfigurer::disable)
@@ -57,9 +67,19 @@ public class SecurityConfig {
 						.successHandler(successHandler())
 						.authorizationEndpoint(authorization -> authorization
 								.authorizationRequestResolver(customAuthorizationRequestResolver()))
-						.defaultSuccessUrl("http://api.playkono.com/", true));
+						.defaultSuccessUrl(determineSuccessUrl(), true));
 
 		return http.build();
+	}
+
+	private String determineSuccessUrl() {
+		// 현재 활성화된 프로필에 따라 URL 결정
+		String activeProfile = System.getProperty("spring.profiles.active", "local");
+		return switch (activeProfile) {
+			case "prod" -> mainUrl;
+			case "dev" -> devUrl;
+			default -> localUrl;
+		};
 	}
 
 	@Bean
@@ -77,7 +97,10 @@ public class SecurityConfig {
 	@Bean
 	public CorsConfigurationSource corsConfigurationSource() {
 		CorsConfiguration configuration = new CorsConfiguration();
-		configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000")); // 프론트엔드 주소
+
+		// 모든 프론트엔드 환경의 URL을 허용
+		configuration.setAllowedOrigins(Arrays.asList(mainUrl, devUrl, localUrl));
+
 		configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
 		configuration.setAllowedHeaders(Arrays.asList("*"));
 		configuration.setAllowCredentials(true);

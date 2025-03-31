@@ -11,6 +11,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -19,7 +20,7 @@ import lombok.Setter;
 @Table(name = "coin_transaction")
 @Getter
 @Setter
-@NoArgsConstructor
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class CoinTransaction {
 
 	@Id
@@ -49,4 +50,14 @@ public class CoinTransaction {
 	@Column(name = "order_amount", nullable = false, columnDefinition = "BIGINT UNSIGNED")
 	private Long orderAmount;
 
+	public CoinTransaction(User user, CoinInfo coinInfo, String orderType, Double orderQuantity, Double orderPrice,
+			Long orderAmount, LocalDateTime createdAt) {
+		this.user = user;
+		this.coinInfo = coinInfo;
+		this.orderType = orderType;
+		this.orderQuantity = orderQuantity;
+		this.orderPrice = orderPrice;
+		this.orderAmount = orderAmount;
+		this.createdAt = createdAt;
+	}
 }

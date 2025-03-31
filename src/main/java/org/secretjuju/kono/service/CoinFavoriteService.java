@@ -1,6 +1,7 @@
 package org.secretjuju.kono.service;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import org.secretjuju.kono.dto.response.CoinInfoResponseDto;
@@ -12,9 +13,13 @@ import org.secretjuju.kono.repository.CoinFavoriteRepository;
 import org.secretjuju.kono.repository.CoinInfoRepository;
 import org.secretjuju.kono.repository.UserRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
+import lombok.extern.slf4j.Slf4j;
+
 @Service
+@Slf4j
 public class CoinFavoriteService {
 	private final UserRepository userRepository;
 	private final CoinFavoriteRepository coinFavoriteRepository;
@@ -60,39 +65,63 @@ public class CoinFavoriteService {
 		return coinFavoriteRepository.findAllCoinInfosByUserId(userId);
 	}
 
-	@Transactional
+	@Transactional(isolation = Isolation.REPEATABLE_READ)
 	public void addFavoriteCoin(Integer userId, String ticker) {
-		// 사용자 존재 여부 확인
-		User user = userRepository.findById(userId).orElseThrow(() -> new IllegalArgumentException("존재하지 않는 사용자입니다."));
+		try {
+			// 사용자 존재 여부 확인
+			User user = userRepository.findById(userId)
+					.orElseThrow(() -> new IllegalArgumentException("존재하지 않는 사용자입니다."));
 
-		// 코인 존재 여부 확인
-		CoinInfo coinInfo = coinInfoRepository.findByTicker(ticker)
-				.orElseThrow(() -> new IllegalArgumentException("존재하지 않는 코인입니다."));
+			// 코인 존재 여부 확인
+			CoinInfo coinInfo = coinInfoRepository.findByTicker(ticker)
+					.orElseThrow(() -> new IllegalArgumentException("존재하지 않는 코인입니다."));
 
-		// 이미 등록된 관심 코인인지 확인
-		boolean exists = coinFavoriteRepository.existsByUserIdAndCoinInfoId(userId, coinInfo.getId());
-		if (exists) {
-			throw new IllegalStateException("이미 관심 코인으로 등록되어 있습니다.");
+			// 비관적 락으로 동시 등록 방지
+			Optional<CoinFavorite> existingFavorite = coinFavoriteRepository.findByUserIdAndCoinInfoIdWithLock(userId,
+					coinInfo.getId());
+
+			if (existingFavorite.isPresent()) {
+				throw new IllegalStateException("이미 관심 코인으로 등록되어 있습니다.");
+			}
+
+			// 관심 코인 등록
+			CoinFavorite coinFavorite = new CoinFavorite();
+			coinFavorite.setUser(user);
+			coinFavorite.setCoinInfo(coinInfo);
+
+			coinFavoriteRepository.save(coinFavorite);
+			log.info("관심 코인 등록 완료: userId={}, ticker={}", userId, ticker);
+
+		} catch (Exception e) {
+			log.error("관심 코인 등록 실패: userId={}, ticker={}", userId, ticker, e);
+			throw e;
 		}
-
-		// 관심 코인 등록
-		CoinFavorite coinFavorite = new CoinFavorite();
-		coinFavorite.setUser(user);
-		coinFavorite.setCoinInfo(coinInfo);
-
-		coinFavoriteRepository.save(coinFavorite);
 	}
 
-	@Transactional
+	@Transactional(isolation = Isolation.REPEATABLE_READ)
 	public void deleteFavoriteCoin(Integer userId, String ticker) {
-		// 사용자 존재 여부 확인
-		userRepository.findById(userId).orElseThrow(() -> new IllegalArgumentException("존재하지 않는 사용자입니다."));
+		try {
+			// 사용자 존재 여부 확인
+			userRepository.findById(userId).orElseThrow(() -> new IllegalArgumentException("존재하지 않는 사용자입니다."));
 
-		// 코인 존재 여부 확인
-		CoinInfo coinInfo = coinInfoRepository.findByTicker(ticker)
-				.orElseThrow(() -> new IllegalArgumentException("존재하지 않는 코인입니다."));
+			// 코인 존재 여부 확인
+			CoinInfo coinInfo = coinInfoRepository.findByTicker(ticker)
+					.orElseThrow(() -> new IllegalArgumentException("존재하지 않는 코인입니다."));
 
-		// 관심 코인 삭제
-		coinFavoriteRepository.deleteByUserIdAndCoinInfoId(userId, coinInfo.getId());
+			// 비관적 락으로 동시 삭제 방지
+			Optional<CoinFavorite> favoriteToDelete = coinFavoriteRepository.findByUserIdAndCoinInfoIdWithLock(userId,
+					coinInfo.getId());
+
+			if (favoriteToDelete.isEmpty()) {
+				throw new IllegalStateException("등록되지 않은 관심 코인입니다.");
+			}
+
+			coinFavoriteRepository.delete(favoriteToDelete.get());
+			log.info("관심 코인 삭제 완료: userId={}, ticker={}", userId, ticker);
+
+		} catch (Exception e) {
+			log.error("관심 코인 삭제 실패: userId={}, ticker={}", userId, ticker, e);
+			throw e;
+		}
 	}
 }

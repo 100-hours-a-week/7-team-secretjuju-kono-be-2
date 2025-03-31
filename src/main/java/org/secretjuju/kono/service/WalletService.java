@@ -18,9 +18,12 @@ import org.secretjuju.kono.exception.UserNotFoundException;
 import org.secretjuju.kono.repository.CoinRepository;
 import org.secretjuju.kono.repository.CoinTransactionRepository;
 import org.secretjuju.kono.repository.UserRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
 
 @Service
@@ -40,17 +43,18 @@ public class WalletService {
 		return transactions.stream().map(this::convertToTransactionsResponse).collect(Collectors.toList());
 	}
 
-	@Transactional
+	@Transactional(isolation = Isolation.REPEATABLE_READ)
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	public CashBalanceResponseDto getCashBalance() {
 		User currentUser = userService.getCurrentUser();
 
-		// CashBalance가 null인 경우 새로 생성
+		// 동시성 처리를 위한 락 추가
 		if (currentUser.getCashBalance() == null) {
 			CashBalance cashBalance = new CashBalance();
-			cashBalance.setBalance(0L); // 초기 잔액 0으로 설정
+			cashBalance.setBalance(0L);
 			cashBalance.setUser(currentUser);
 			currentUser.setCashBalance(cashBalance);
-			userRepository.save(currentUser); // 변경사항 저장
+			userRepository.save(currentUser);
 		}
 
 		Long balance = currentUser.getCashBalance().getBalance();

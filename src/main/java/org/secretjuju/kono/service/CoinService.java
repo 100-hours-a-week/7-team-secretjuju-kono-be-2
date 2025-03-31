@@ -16,22 +16,26 @@ import org.secretjuju.kono.entity.CoinInfo;
 import org.secretjuju.kono.entity.CoinTransaction;
 import org.secretjuju.kono.entity.User;
 import org.secretjuju.kono.exception.CustomException;
+import org.secretjuju.kono.repository.CashBalanceRepository;
+import org.secretjuju.kono.repository.CoinHoldingRepository;
 import org.secretjuju.kono.repository.CoinRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
 @Service
+@Slf4j
+@RequiredArgsConstructor
 public class CoinService {
 
+	private final CoinHoldingRepository coinHoldingRepository;
+	private final CashBalanceRepository cashBalanceRepository;
 	private final CoinRepository coinRepository;
 	private final UserService userService;
 	private final UpbitService upbitService;
-
-	public CoinService(CoinRepository coinRepository, UserService userService, UpbitService upbitService) {
-		this.coinRepository = coinRepository;
-		this.userService = userService;
-		this.upbitService = upbitService;
-	}
 
 	public List<CoinInfoResponseDto> getAllCoinInfo() {
 		List<CoinInfo> coinInfos = coinRepository.findAll();
@@ -52,177 +56,147 @@ public class CoinService {
 		return tickerResponse.getTrade_price();
 	}
 
-	@Transactional
+	@Transactional(isolation = Isolation.REPEATABLE_READ)
 	public void createCoinOrder(CoinSellBuyRequestDto coinSellBuyRequestDto) {
 		// 현재 로그인한 사용자 정보를 가져옵니다.
 		User currentUser = userService.getCurrentUser();
 
 		// 해당 코인 정보를 가져옵니다.
-		Optional<CoinInfo> coinInfoOpt = coinRepository.findByTicker(coinSellBuyRequestDto.getTicker());
-		if (coinInfoOpt.isEmpty()) {
-			throw new CustomException(404, "해당 코인을 찾을 수 없습니다.");
-		}
-		CoinInfo coinInfo = coinInfoOpt.get();
+		CoinInfo coinInfo = coinRepository.findByTicker(coinSellBuyRequestDto.getTicker())
+				.orElseThrow(() -> new CustomException(404, "해당 코인을 찾을 수 없습니다."));
 
-		// 업비트에서 현재가 조회
-		Double currentPrice = getCurrentPrice(coinSellBuyRequestDto.getTicker());
+		try {
+			// 업비트에서 현재가 조회
+			Double currentPrice = getCurrentPrice(coinSellBuyRequestDto.getTicker());
+			coinSellBuyRequestDto.setOrderPrice(currentPrice);
 
-		// 현재가 설정
-		coinSellBuyRequestDto.setOrderPrice(currentPrice);
-
-		// orderAmount가 null인 경우 체크
-		if (coinSellBuyRequestDto.getOrderAmount() == null) {
-			// orderQuantity가 설정되어 있으면 그것을 기준으로 orderAmount 계산
-			if (coinSellBuyRequestDto.getOrderQuantity() != null && coinSellBuyRequestDto.getOrderQuantity() > 0) {
-				Long calculatedAmount = Math.round(coinSellBuyRequestDto.getOrderQuantity() * currentPrice);
-				coinSellBuyRequestDto.setOrderAmount(calculatedAmount);
-			} else {
-
-				coinSellBuyRequestDto.setOrderAmount(100000L);
-			}
-		}
-
-		// 주문 금액을 현재가로 나눠서 코인 수량 계산
-		Double orderQuantity = coinSellBuyRequestDto.getOrderAmount() / currentPrice;
-		// 소수점 8자리까지만 계산 (Bitcoin 최소 단위)
-		orderQuantity = Math.floor(orderQuantity * 100000000) / 100000000;
-		coinSellBuyRequestDto.setOrderQuantity(orderQuantity);
-
-		// 주문 유효성 검사 및 조정
-		validateAndAdjustOrder(currentUser, coinSellBuyRequestDto, coinInfo);
-
-		// 거래 내역을 기록합니다.
-		CoinTransaction transaction = new CoinTransaction();
-		transaction.setUser(currentUser);
-		transaction.setCoinInfo(coinInfo);
-		transaction.setOrderType(coinSellBuyRequestDto.getOrderType());
-		transaction.setOrderQuantity(coinSellBuyRequestDto.getOrderQuantity());
-		transaction.setOrderPrice(coinSellBuyRequestDto.getOrderPrice());
-		transaction.setOrderAmount(coinSellBuyRequestDto.getOrderAmount());
-		transaction.setCreatedAt(LocalDateTime.now());
-		currentUser.addTransaction(transaction);
-
-		// 거래 타입에 따라 코인 보유량과 현금 잔액을 업데이트합니다.
-		if ("buy".equalsIgnoreCase(coinSellBuyRequestDto.getOrderType())) {
-			// 구매 시 처리
-			processBuy(currentUser, coinInfo, coinSellBuyRequestDto);
-		} else if ("sell".equalsIgnoreCase(coinSellBuyRequestDto.getOrderType())) {
-			// 판매 시 처리
-			processSell(currentUser, coinInfo, coinSellBuyRequestDto);
-		} else {
-			throw new CustomException(401, "유효하지 않은 거래 타입입니다.");
-		}
-	}
-
-	// 주문 유효성 검사 및 조정
-	private void validateAndAdjustOrder(User user, CoinSellBuyRequestDto request, CoinInfo coinInfo) {
-		if ("buy".equalsIgnoreCase(request.getOrderType())) {
-			// 구매 시 유효성 검사
-			CashBalance cashBalance = user.getCashBalance();
-			if (cashBalance == null) {
-				throw new CustomException(404, "현금 잔액 정보가 없습니다.");
-			}
-
-			// 보유 현금보다 주문 금액이 큰 경우 오류
-			if (cashBalance.getBalance() < request.getOrderAmount()) {
-				throw new CustomException(401, "현금 잔액이 부족합니다. 현재 잔액: " + cashBalance.getBalance());
-			}
-
-			// 최소 주문금액 확인
-			if (request.getOrderAmount() < 5000) {
-				throw new CustomException(400, "최소 주문 금액은 5000원입니다. 현재 주문 금액: " + request.getOrderAmount());
-			}
-
-		} else if ("sell".equalsIgnoreCase(request.getOrderType())) {
-			// 판매 시 유효성 검사
-			Optional<CoinHolding> existingHolding = user.getCoinHoldings().stream()
-					.filter(holding -> holding.getCoinInfo().getId().equals(coinInfo.getId())).findFirst();
-
-			if (existingHolding.isEmpty()) {
-				throw new CustomException(403, "판매할 코인을 보유하고 있지 않습니다.");
-			}
-
-			// 보유 수량보다 많이 판매하려고 하면 보유 수량으로 조정
-			if (existingHolding.get().getHoldingQuantity() < request.getOrderQuantity()) {
-				Double availableQuantity = existingHolding.get().getHoldingQuantity();
-				request.setOrderQuantity(availableQuantity);
-				// 주문 금액도 다시 계산
-				request.setOrderAmount(Math.round(request.getOrderPrice() * availableQuantity));
-
-				if (request.getOrderQuantity() < 0) {
-					throw new CustomException(404, "판매할 코인이 없습니다.");
+			// orderAmount 계산
+			if (coinSellBuyRequestDto.getOrderAmount() == null) {
+				if (coinSellBuyRequestDto.getOrderQuantity() != null && coinSellBuyRequestDto.getOrderQuantity() > 0) {
+					Long calculatedAmount = Math.round(coinSellBuyRequestDto.getOrderQuantity() * currentPrice);
+					coinSellBuyRequestDto.setOrderAmount(calculatedAmount);
+				} else {
+					coinSellBuyRequestDto.setOrderAmount(100000L);
 				}
 			}
 
-			if (request.getOrderQuantity() <= 0) {
-				throw new CustomException(400, "최소 주문 수량은 0이 될 수없습니다. 현재 주문 수량: " + request.getOrderQuantity());
+			// 주문 수량 계산
+			Double orderQuantity = coinSellBuyRequestDto.getOrderAmount() / currentPrice;
+			orderQuantity = Math.floor(orderQuantity * 100000000) / 100000000;
+			coinSellBuyRequestDto.setOrderQuantity(orderQuantity);
+
+			if ("buy".equalsIgnoreCase(coinSellBuyRequestDto.getOrderType())) {
+				processBuyOrder(currentUser, coinInfo, coinSellBuyRequestDto);
+			} else if ("sell".equalsIgnoreCase(coinSellBuyRequestDto.getOrderType())) {
+				processSellOrder(currentUser, coinInfo, coinSellBuyRequestDto);
+			} else {
+				throw new CustomException(401, "유효하지 않은 거래 타입입니다.");
 			}
+
+		} catch (Exception e) {
+			log.error("주문 처리 중 오류 발생: {}", e.getMessage());
+			throw new CustomException(500, "주문 처리 중 오류가 발생했습니다: " + e.getMessage());
 		}
 	}
 
-	private void processBuy(User user, CoinInfo coinInfo, CoinSellBuyRequestDto request) {
-		// 현금 잔액 확인
-		CashBalance cashBalance = user.getCashBalance();
-		if (cashBalance == null) {
-			cashBalance = new CashBalance();
-			user.setCashBalance(cashBalance);
-		}
+	@Transactional(isolation = Isolation.REPEATABLE_READ)
+	private void processBuyOrder(User user, CoinInfo coinInfo, CoinSellBuyRequestDto request) {
+		// 현금 잔액 락 획득
+		CashBalance cashBalance = cashBalanceRepository.findByUserWithLock(user)
+				.orElseThrow(() -> new CustomException(404, "현금 잔액 정보가 없습니다."));
 
-		// 현금 잔액이 충분한지 확인
 		if (cashBalance.getBalance() < request.getOrderAmount()) {
-			throw new CustomException(403, "현금 잔액이 부족합니다. 현재 잔액: " + cashBalance.getBalance());
+			throw new CustomException(403, "현금 잔액이 부족합니다.");
 		}
 
-		// 현금 잔액 감소
-		cashBalance.setBalance(cashBalance.getBalance() - request.getOrderAmount());
-
-		// 코인 보유량 업데이트
-		Optional<CoinHolding> existingHolding = user.getCoinHoldings().stream()
-				.filter(holding -> holding.getCoinInfo().getId().equals(coinInfo.getId())).findFirst();
-
-		if (existingHolding.isPresent()) {
-			// 기존 보유량이 있는 경우 수량 증가
-			CoinHolding holding = existingHolding.get();
-			holding.setHoldingQuantity(holding.getHoldingQuantity() + request.getOrderQuantity());
-			holding.setHoldingPrice((holding.getHoldingPrice() + (request.getOrderPrice() * request.getOrderQuantity()))
-					/ (holding.getHoldingQuantity() + request.getOrderQuantity()));
-		} else {
-			// 기존 보유량이 없는 경우 새로 생성
+		// 코인 보유 정보 락 획득
+		CoinHolding holding = coinHoldingRepository.findByUserAndCoinInfoWithLock(user, coinInfo).orElseGet(() -> {
 			CoinHolding newHolding = new CoinHolding();
+			newHolding.setUser(user);
 			newHolding.setCoinInfo(coinInfo);
-			newHolding.setHoldingQuantity(request.getOrderQuantity());
-			newHolding.setHoldingPrice(request.getOrderPrice() * request.getOrderQuantity());
-			user.addCoinHolding(newHolding);
+			newHolding.setHoldingQuantity(0.0);
+			return newHolding;
+		});
+
+		try {
+			// 4. 거래 처리
+			cashBalance.setBalance(cashBalance.getBalance() - request.getOrderAmount());
+
+			// 평균 매수가 계산
+			double newQuantity = holding.getHoldingQuantity() + request.getOrderQuantity();
+			double newHoldingPrice = calculateNewHoldingPrice(holding.getHoldingQuantity(), holding.getHoldingPrice(),
+					request.getOrderQuantity(), request.getOrderPrice());
+
+			holding.setHoldingQuantity(newQuantity);
+			holding.setHoldingPrice(newHoldingPrice); // 평균 매수가 설정
+
+			// 저장
+			cashBalanceRepository.save(cashBalance);
+			coinHoldingRepository.save(holding);
+
+			// 거래 내역 기록
+			recordTransaction(user, coinInfo, request);
+		} catch (Exception e) {
+			log.error("Buy order processing failed", e);
+			throw new CustomException(500, "거래 처리 중 오류가 발생했습니다.");
 		}
 	}
 
-	private void processSell(User user, CoinInfo coinInfo, CoinSellBuyRequestDto request) {
-		// 해당 코인 보유량 확인
-		Optional<CoinHolding> existingHolding = user.getCoinHoldings().stream()
-				.filter(holding -> holding.getCoinInfo().getId().equals(coinInfo.getId())).findFirst();
+	// 평균 매수가 계산 메서드
+	private double calculateNewHoldingPrice(double oldQuantity, double oldPrice, double newQuantity, double newPrice) {
+		if (oldQuantity <= 0) {
+			return newPrice;
+		}
 
-		if (existingHolding.isEmpty() || existingHolding.get().getHoldingQuantity() < request.getOrderQuantity()) {
+		double totalCost = (oldQuantity * oldPrice) + (newQuantity * newPrice);
+		double totalQuantity = oldQuantity + newQuantity;
+		return totalCost / totalQuantity;
+	}
+
+	@Transactional(isolation = Isolation.REPEATABLE_READ)
+	private void processSellOrder(User user, CoinInfo coinInfo, CoinSellBuyRequestDto request) {
+		// 코인 보유 정보 락 획득
+		CoinHolding holding = coinHoldingRepository.findByUserAndCoinInfoWithLock(user, coinInfo)
+				.orElseThrow(() -> new CustomException(403, "판매할 코인을 보유하고 있지 않습니다."));
+
+		if (holding.getHoldingQuantity() < request.getOrderQuantity()) {
 			throw new CustomException(403, "코인 보유량이 부족합니다.");
-		} else if (request.getOrderAmount() < 5000) {
-			throw new CustomException(400, "최소 주문 금액은 5000원입니다. 현재 주문 금액: " + request.getOrderAmount());
 		}
 
-		// 코인 보유량 감소
-		CoinHolding holding = existingHolding.get();
-		holding.setHoldingQuantity(holding.getHoldingQuantity() - request.getOrderQuantity());
+		// 현금 잔액 락 획득
+		CashBalance cashBalance = cashBalanceRepository.findByUserWithLock(user)
+				.orElseThrow(() -> new CustomException(404, "현금 잔액 정보가 없습니다."));
 
-		// 코인을 모두 판매한 경우 보유 목록에서 제거
-		if (holding.getHoldingQuantity() <= 0) {
-			user.getCoinHoldings().remove(holding);
-		}
+		try {
+			// 4. 거래 처리
+			cashBalance.setBalance(cashBalance.getBalance() + request.getOrderAmount());
 
-		// 현금 잔액 증가
-		CashBalance cashBalance = user.getCashBalance();
-		if (cashBalance == null) {
-			cashBalance = new CashBalance();
-			user.setCashBalance(cashBalance);
+			double remainingQuantity = holding.getHoldingQuantity() - request.getOrderQuantity();
+
+			if (remainingQuantity <= 0.00000001) {
+				coinHoldingRepository.delete(holding);
+			} else {
+				holding.setHoldingQuantity(remainingQuantity);
+				// 매도 시에는 평균 매수가가 변경되지 않음
+				coinHoldingRepository.save(holding);
+			}
+
+			// 저장
+			cashBalanceRepository.save(cashBalance);
+
+			// 거래 내역 기록
+			recordTransaction(user, coinInfo, request);
+		} catch (Exception e) {
+			log.error("Sell order processing failed", e);
+			throw new CustomException(500, "거래 처리 중 오류가 발생했습니다.");
 		}
-		cashBalance.setBalance(cashBalance.getBalance() + request.getOrderAmount());
+	}
+
+	private void recordTransaction(User user, CoinInfo coinInfo, CoinSellBuyRequestDto request) {
+		CoinTransaction transaction = new CoinTransaction(user, coinInfo, request.getOrderType(),
+				request.getOrderQuantity(), request.getOrderPrice(), request.getOrderAmount(), LocalDateTime.now());
+
+		user.addTransaction(transaction);
 	}
 
 	private CoinInfoResponseDto convertToCoinInfosResponse(CoinInfo coinInfo) {

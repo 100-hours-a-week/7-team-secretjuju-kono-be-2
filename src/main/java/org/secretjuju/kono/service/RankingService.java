@@ -39,10 +39,12 @@ public class RankingService {
 		return 0.0;
 	}
 
-	// 사용자의 총 자산 계산
+	// 사용자의 총 자산 계산(전체랭킹)
 	private Long calculateTotalAssets(User user) {
 		// 현금 잔액
 		Long cashBalance = 0L;
+
+		// 캐시 밸런스가 유저 없을때인데 이거 필요한가?
 		if (user.getCashBalance() != null) {
 			cashBalance = user.getCashBalance().getBalance();
 		} else {

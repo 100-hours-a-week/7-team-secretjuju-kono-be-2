@@ -240,7 +240,7 @@ public class CoinService {
 			holding.setHoldingQuantity(holding.getHoldingQuantity() - request.getOrderQuantity());
 
 			// 코인을 모두 판매한 경우 보유 목록에서 제거(0.1오류 로직 부분 검토 코드)
-			if (holding.getHoldingQuantity() <= 0.00001) {
+			if (holding.getHoldingQuantity() <= 0) {
 				user.getCoinHoldings().remove(holding);
 			}
 			// 현금 잔액 증가

@@ -17,21 +17,32 @@ import org.secretjuju.kono.entity.CoinInfo;
 import org.secretjuju.kono.entity.CoinTransaction;
 import org.secretjuju.kono.entity.User;
 import org.secretjuju.kono.exception.CustomException;
+import org.secretjuju.kono.repository.CashBalanceRepository;
+import org.secretjuju.kono.repository.CoinHoldingRepository;
 import org.secretjuju.kono.repository.CoinRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
+import lombok.extern.slf4j.Slf4j;
+
 @Service
+@Slf4j
 public class CoinService {
 
 	private final CoinRepository coinRepository;
 	private final UserService userService;
 	private final UpbitService upbitService;
+	private final CashBalanceRepository cashBalanceRepository;
+	private final CoinHoldingRepository coinHoldingRepository;
 
-	public CoinService(CoinRepository coinRepository, UserService userService, UpbitService upbitService) {
+	public CoinService(CoinRepository coinRepository, UserService userService, UpbitService upbitService,
+			CashBalanceRepository cashBalanceRepository, CoinHoldingRepository coinHoldingRepository) {
 		this.coinRepository = coinRepository;
 		this.userService = userService;
 		this.upbitService = upbitService;
+		this.cashBalanceRepository = cashBalanceRepository;
+		this.coinHoldingRepository = coinHoldingRepository;
 	}
 
 	public List<CoinInfoResponseDto> getAllCoinInfo() {
@@ -53,7 +64,7 @@ public class CoinService {
 		return tickerResponse.getTrade_price();
 	}
 
-	@Transactional
+	@Transactional(isolation = Isolation.REPEATABLE_READ)
 	public void createCoinOrder(CoinSellBuyRequestDto coinSellBuyRequestDto) {
 		// 현재 로그인한 사용자 정보를 가져옵니다.
 		User currentUser = userService.getCurrentUser();
@@ -161,12 +172,15 @@ public class CoinService {
 	}
 
 	private void processBuy(User user, CoinInfo coinInfo, CoinSellBuyRequestDto request) {
-		// 현금 잔액 확인
-		CashBalance cashBalance = user.getCashBalance();
-		if (cashBalance == null) {
-			cashBalance = new CashBalance();
-			user.setCashBalance(cashBalance);
-		}
+		// 현금 잔액 락 획득
+		CashBalance cashBalance = cashBalanceRepository.findByUserWithLock(user).orElseGet(() -> {
+			CashBalance newBalance = new CashBalance();
+			user.setCashBalance(newBalance);
+			return newBalance;
+		});
+
+		// 코인 보유 정보 락 획득
+		Optional<CoinHolding> existingHolding = coinHoldingRepository.findByUserAndCoinInfoWithLock(user, coinInfo);
 
 		// 현금 잔액이 충분한지 확인
 		if (cashBalance.getBalance() < request.getOrderAmount()) {
@@ -177,9 +191,6 @@ public class CoinService {
 		cashBalance.setBalance(cashBalance.getBalance() - request.getOrderAmount());
 
 		// 코인 보유량 업데이트
-		Optional<CoinHolding> existingHolding = user.getCoinHoldings().stream()
-				.filter(holding -> holding.getCoinInfo().getId().equals(coinInfo.getId())).findFirst();
-
 		if (existingHolding.isPresent()) {
 			// 기존 보유량이 있는 경우 수량과 평균 매수가 업데이트
 			CoinHolding holding = existingHolding.get();
@@ -188,29 +199,26 @@ public class CoinService {
 
 			holding.setHoldingQuantity(newTotalQuantity);
 			holding.setHoldingPrice(holding.getHoldingPrice() + newHoldingPrice); // 항상 코인당 평균 매수가로 저장
-			// // 기존 보유량이 있는 경우 수량 증가
-			// CoinHolding holding = existingHolding.get();
-			// holding.setHoldingQuantity(holding.getHoldingQuantity() +
-			// request.getOrderQuantity());
-			// holding.setHoldingPrice((holding.getHoldingPrice() + (request.getOrderPrice()
-			// * request.getOrderQuantity()))
-			// / (holding.getHoldingQuantity() + request.getOrderQuantity()));
 		} else {
 			// 기존 보유량이 없는 경우 새로 생성
 			CoinHolding newHolding = new CoinHolding();
 			newHolding.setCoinInfo(coinInfo);
 			newHolding.setHoldingQuantity(request.getOrderQuantity());
-			// newHolding.setHoldingPrice(request.getOrderPrice() *
-			// request.getOrderQuantity());
 			newHolding.setHoldingPrice(request.getOrderPrice() * request.getOrderQuantity());
 			user.addCoinHolding(newHolding);
 		}
 	}
 
 	private void processSell(User user, CoinInfo coinInfo, CoinSellBuyRequestDto request) {
-		// 해당 코인 보유량 확인
-		Optional<CoinHolding> existingHolding = user.getCoinHoldings().stream()
-				.filter(holding -> holding.getCoinInfo().getId().equals(coinInfo.getId())).findFirst();
+		// 코인 보유 정보 락 획득
+		Optional<CoinHolding> existingHolding = coinHoldingRepository.findByUserAndCoinInfoWithLock(user, coinInfo);
+
+		// 현금 잔액 락 획득
+		CashBalance cashBalance = cashBalanceRepository.findByUserWithLock(user).orElseGet(() -> {
+			CashBalance newBalance = new CashBalance();
+			user.setCashBalance(newBalance);
+			return newBalance;
+		});
 
 		if (existingHolding.isEmpty() || existingHolding.get().getHoldingQuantity() < request.getOrderQuantity()) {
 			throw new CustomException(403, "코인 보유량이 부족합니다.");
@@ -221,7 +229,6 @@ public class CoinService {
 			// 코인 보유량 감소
 			System.out.println("유효한 거래입니다!");
 			CoinHolding holding = existingHolding.get();
-			holding.setHoldingQuantity(holding.getHoldingQuantity() - request.getOrderQuantity());
 
 			System.out.println(holding.getHoldingPrice()
 					- ((holding.getHoldingPrice() / holding.getHoldingQuantity()) * request.getOrderQuantity())); ///// 로그확인
@@ -230,16 +237,13 @@ public class CoinService {
 			holding.setHoldingPrice(holding.getHoldingPrice()
 					- ((holding.getHoldingPrice() / holding.getHoldingQuantity()) * request.getOrderQuantity()));
 
-			// 코인을 모두 판매한 경우 보유 목록에서 제거
-			if (holding.getHoldingQuantity() <= 0) {
+			holding.setHoldingQuantity(holding.getHoldingQuantity() - request.getOrderQuantity());
+
+			// 코인을 모두 판매한 경우 보유 목록에서 제거(0.1오류 로직 부분 검토 코드)
+			if (holding.getHoldingQuantity() <= 0.00001) {
 				user.getCoinHoldings().remove(holding);
 			}
 			// 현금 잔액 증가
-			CashBalance cashBalance = user.getCashBalance();
-			if (cashBalance == null) {
-				cashBalance = new CashBalance();
-				user.setCashBalance(cashBalance);
-			}
 			cashBalance.setBalance(cashBalance.getBalance() + request.getOrderAmount());
 		}
 

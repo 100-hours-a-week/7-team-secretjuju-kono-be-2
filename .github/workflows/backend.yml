@@ -3,7 +3,7 @@ name: Backend CI/CD
 on:
   push:
     branches: [ "fix/backend.yml" ]
- 
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -23,30 +23,36 @@ jobs:
 
     - name: Setup SSH Key (base64 decode)
       run: |
-        
         echo "${{ secrets.EC2_PRIVATE_KEY_B64 }}" | base64 -d > key.pem
         chmod 400 key.pem
-        
-    - name: Register Public Key on EC2
-      run: |
-        ssh -i key.pem -o StrictHostKeyChecking=no ubuntu@3.36.226.164 "
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          touch ~/.ssh/authorized_keys
-          grep -qxF \"$(cat id_rsa.pub)\" ~/.ssh/authorized_keys || echo \"$(cat id_rsa.pub)\" >> ~/.ssh/authorized_keys
-          chmod 600 ~/.ssh/authorized_keys
-        "
-      
-    - name: SCP JAR to EC2
-      run: |
-        scp -i key.pem -o StrictHostKeyChecking=no build/libs/*.jar ubuntu@3.36.226.164:/home/ubuntu/backend/tmp.jar
-        ssh -i key.pem -o StrictHostKeyChecking=no ubuntu@3.36.226.164 "mv /home/ubuntu/backend/tmp.jar /home/ubuntu/backend/app.jar"
 
-    - name: SSH & Restart Service
+    - name: Ensure backend directory exists on EC2
       run: |
-        ssh -v -i key.pem -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@3.36.226.164 "
-          sh -c '
-            set +e
-            pkill -f "java -jar" || true
-            nohup java -jar /home/ubuntu/backend/app.jar --server.port=8080 > /home/ubuntu/backend/app.log 2>&1 &
-          '
-        "
+        ssh -i key.pem -o StrictHostKeyChecking=no ubuntu@3.36.226.164 "mkdir -p /home/ubuntu/backend"
+
+    - name: Upload JAR to EC2 with temp name and rename to app.jar
+      run: |
+        scp -i key.pem -o StrictHostKeyChecking=no build/libs/*.jar ubuntu@3.36.226.164:/home/ubuntu/backend/temp.jar
+        ssh -i key.pem -o StrictHostKeyChecking=no ubuntu@3.36.226.164 "mv /home/ubuntu/backend/temp.jar /home/ubuntu/backend/app.jar"
+
+    - name: Upload application.yml to EC2
+      run: |
+        scp -i key.pem -o StrictHostKeyChecking=no src/main/resources/application.yml ubuntu@3.36.226.164:/home/ubuntu/backend/
+
+    - name: SSH & Restart Spring Boot App
+      run: |
+        ssh -i key.pem -o StrictHostKeyChecking=no ubuntu@3.36.226.164 << 'EOF'
+        cd /home/ubuntu/backend
+
+        # 종료할 프로세스 찾고 종료
+        PID=$(ps -ef | grep 'java -jar app.jar' | grep -v grep | awk '{print $2}')
+        if [ -n "$PID" ]; then
+          kill "$PID"
+          sleep 2
+        fi
+
+        # 백그라운드로 재실행
+        nohup java -jar app.jar \
+          --spring.config.location=file:/home/ubuntu/backend/application.yml \
+          > app.log 2>&1 &
+        EOF

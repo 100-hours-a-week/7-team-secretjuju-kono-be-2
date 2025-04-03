@@ -18,7 +18,6 @@ import org.secretjuju.kono.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -33,6 +32,7 @@ public class RankingService {
 	private final CashBalanceRepository cashBalanceRepository;
 	private final UserService userService;
 	private final CoinPriceService coinPriceService;
+	private final RedisCacheService redisCacheService;
 
 	// 사용자의 총 자산 계산
 	private Long calculateTotalAssets(User user) {
@@ -77,20 +77,24 @@ public class RankingService {
 
 		// 2. 각 사용자의 총 자산 계산 및 랭킹 업데이트
 		for (User user : users) {
-			Long currentAssets = calculateTotalAssets(user);
+			try {
+				Long currentAssets = calculateTotalAssets(user);
 
-			// TotalRanking 업데이트
-			TotalRanking totalRanking = totalRankingRepository.findByUser(user).orElse(new TotalRanking(user));
-			totalRanking.setCurrentTotalAssets(currentAssets);
-			totalRanking.updateTime();
-			totalRankingRepository.save(totalRanking);
+				// findByUser() 사용하여 사용자별 단일 레코드만 찾도록 함
+				TotalRanking totalRanking = totalRankingRepository.findByUser(user).orElse(new TotalRanking(user));
+				totalRanking.setCurrentTotalAssets(currentAssets);
+				totalRanking.updateTime();
+				totalRankingRepository.save(totalRanking);
 
-			// DailyRanking 업데이트
-			DailyRanking dailyRanking = dailyRankingRepository.findByUser(user).orElse(new DailyRanking(user));
-			dailyRanking.setCurrentTotalAssets(currentAssets);
-			dailyRanking.setProfitRate(calculateProfitRate(currentAssets, dailyRanking.getLastDayTotalAssets()));
-			dailyRanking.updateTime();
-			dailyRankingRepository.save(dailyRanking);
+				DailyRanking dailyRanking = dailyRankingRepository.findByUser(user).orElse(new DailyRanking(user));
+				dailyRanking.setCurrentTotalAssets(currentAssets);
+				dailyRanking.setProfitRate(calculateProfitRate(currentAssets, dailyRanking.getLastDayTotalAssets()));
+				dailyRanking.updateTime();
+				dailyRankingRepository.save(dailyRanking);
+			} catch (Exception e) {
+				log.error("사용자 ID: {}의 랭킹 업데이트 중 오류 발생", user.getId(), e);
+				// 오류가 있어도 다음 사용자 처리 계속
+			}
 		}
 
 		// 3. 전체 랭킹 순위 업데이트
@@ -109,7 +113,10 @@ public class RankingService {
 		}
 		dailyRankingRepository.saveAll(dailyRankings);
 
-		log.info("랭킹 업데이트 완료");
+		// log.info("랭킹 업데이트 완료");
+		refreshRankingCache();
+		log.info("랭킹 업데이트 및 캐시 갱신 완료");
+
 	}
 
 	@Transactional
@@ -130,53 +137,154 @@ public class RankingService {
 	@Transactional(readOnly = true)
 	public List<DailyRankingResponseDto> getDailyRanking() {
 		// 일간 랭킹 상위 100개 조회
+		// List<DailyRanking> dailyRankings =
+		// dailyRankingRepository.findTop100ByOrderByDailyRankAsc();
+		//
+		// return
+		// dailyRankings.stream().map(this::convertToDailyRankingResponse).collect(Collectors.toList());
+
+		// Redis 캐시에서 먼저 조회
+		List<DailyRankingResponseDto> cachedRankings = redisCacheService.getDailyRankings();
+
+		// 캐시가 있으면 캐시 데이터 반환
+		if (cachedRankings != null && !cachedRankings.isEmpty()) {
+			log.info("일간 랭킹 캐시에서 반환: {} 개 항목", cachedRankings.size());
+			return cachedRankings;
+		}
+
+		// 캐시가 없으면 DB에서 조회 후 캐시 저장
+		log.info("일간 랭킹 DB에서 조회");
 		List<DailyRanking> dailyRankings = dailyRankingRepository.findTop100ByOrderByDailyRankAsc();
 
-		return dailyRankings.stream().map(this::convertToDailyRankingResponse).collect(Collectors.toList());
+		List<DailyRankingResponseDto> result = dailyRankings.stream().map(this::convertToDailyRankingResponse)
+				.collect(Collectors.toList());
+
+		// 결과 캐싱
+		redisCacheService.cacheDailyRankings(result);
+
+		return result;
+
 	}
 
 	// 전체 랭킹 조회
 	public List<TotalRankingResponseDto> getTotalRanking() {
 		// 전체 랭킹 상위 100개 조회
+		// List<TotalRanking> totalRankings =
+		// totalRankingRepository.findTop100ByOrderByTotalRankAsc();
+		//
+		// return
+		// totalRankings.stream().map(this::convertToTotalRankingResponse).collect(Collectors.toList());
+
+		// Redis 캐시에서 먼저 조회
+		List<TotalRankingResponseDto> cachedRankings = redisCacheService.getTotalRankings();
+
+		// 캐시가 있으면 캐시 데이터 반환
+		if (cachedRankings != null && !cachedRankings.isEmpty()) {
+			log.info("전체 랭킹 캐시에서 반환: {} 개 항목", cachedRankings.size());
+			return cachedRankings;
+		}
+
+		// 캐시가 없으면 DB에서 조회
+		log.info("전체 랭킹 DB에서 조회");
 		List<TotalRanking> totalRankings = totalRankingRepository.findTop100ByOrderByTotalRankAsc();
 
-		return totalRankings.stream().map(this::convertToTotalRankingResponse).collect(Collectors.toList());
+		List<TotalRankingResponseDto> result = totalRankings.stream().map(this::convertToTotalRankingResponse)
+				.collect(Collectors.toList());
+
+		// 결과 캐싱
+		redisCacheService.cacheTotalRankings(result);
+
+		return result;
 	}
 
 	// 현재 사용자의 일간 랭킹 조회
 	public DailyRankingResponseDto getCurrentUserDailyRanking() {
 		User currentUser = userService.getCurrentUser();
 
-		DailyRanking dailyRanking = dailyRankingRepository.findByUser(currentUser)
-				.orElseThrow(() -> new EntityNotFoundException("랭킹 정보를 찾을 수 없습니다."));
+		Integer userId = currentUser.getId();
+
+		// 캐시에서 먼저 조회
+		DailyRankingResponseDto cachedRanking = redisCacheService.getUserDailyRanking(userId);
+		if (cachedRanking != null) {
+			log.info("사용자 일간 랭킹 캐시에서 반환: userId={}", userId);
+			return cachedRanking;
+		}
+
+		// DB에서 조회
+		log.info("사용자 일간 랭킹 DB에서 조회: userId={}", userId);
+
+		DailyRanking dailyRanking = dailyRankingRepository.findByUser(currentUser).orElseGet(() -> {
+			// 랭킹이 없으면 생성
+			DailyRanking newRanking = new DailyRanking(currentUser);
+			return dailyRankingRepository.save(newRanking);
+		});
+		// .orElseThrow(() -> new EntityNotFoundException("랭킹 정보를 찾을 수 없습니다."));
 
 		List<String> badgeImageUrls = currentUser.getBadges().stream().map(Badge::getBadgeImageUrl)
 				.collect(Collectors.toList());
 
-		DailyRankingResponseDto responseDto = DailyRankingResponseDto.builder().nickname(currentUser.getNickname())
+		DailyRankingResponseDto result = DailyRankingResponseDto.builder().nickname(currentUser.getNickname())
 				.profileImageUrl(currentUser.getProfileImageUrl()).badgeImageUrl(badgeImageUrls)
 				.profitRate(dailyRanking.getProfitRate()).rank(dailyRanking.getDailyRank())
 				.updatedAt(dailyRanking.getUpdatedAt()).build();
 
-		return responseDto;
+		// 결과 캐싱
+		redisCacheService.cacheUserDailyRanking(userId, result);
+
+		return result;
+
+		// DailyRankingResponseDto responseDto =
+		// DailyRankingResponseDto.builder().nickname(currentUser.getNickname())
+		// .profileImageUrl(currentUser.getProfileImageUrl()).badgeImageUrl(badgeImageUrls)
+		// .profitRate(dailyRanking.getProfitRate()).rank(dailyRanking.getDailyRank())
+		// .updatedAt(dailyRanking.getUpdatedAt()).build();
+		//
+		// return responseDto;
 	}
 
 	// 현재 사용자의 전체 랭킹 조회
 	public TotalRankingResponseDto getCurrentUserTotalRanking() {
 		User currentUser = userService.getCurrentUser();
 
-		TotalRanking totalRanking = totalRankingRepository.findByUser(currentUser)
-				.orElseThrow(() -> new EntityNotFoundException("랭킹 정보를 찾을 수 없습니다."));
+		Integer userId = currentUser.getId();
+
+		// 캐시에서 먼저 조회
+		TotalRankingResponseDto cachedRanking = redisCacheService.getUserTotalRanking(userId);
+		if (cachedRanking != null) {
+			log.info("사용자 전체 랭킹 캐시에서 반환: userId={}", userId);
+			return cachedRanking;
+		}
+
+		// DB에서 조회
+		log.info("사용자 전체 랭킹 DB에서 조회: userId={}", userId);
+
+		TotalRanking totalRanking = totalRankingRepository.findByUser(currentUser).orElseGet(() -> {
+			// 랭킹이 없으면 생성
+			TotalRanking newRanking = new TotalRanking(currentUser);
+			return totalRankingRepository.save(newRanking);
+		});
+		// .orElseThrow(() -> new EntityNotFoundException("랭킹 정보를 찾을 수 없습니다."));
 
 		List<String> badgeImageUrls = currentUser.getBadges().stream().map(Badge::getBadgeImageUrl)
 				.collect(Collectors.toList());
 
-		TotalRankingResponseDto responseDto = TotalRankingResponseDto.builder().nickname(currentUser.getNickname())
+		TotalRankingResponseDto result = TotalRankingResponseDto.builder().nickname(currentUser.getNickname())
 				.profileImageUrl(currentUser.getProfileImageUrl()).badgeImageUrl(badgeImageUrls)
 				.profit(totalRanking.getProfit()).rank(totalRanking.getTotalRank())
 				.updatedAt(totalRanking.getUpdatedAt()).build();
 
-		return responseDto;
+		// 결과 캐싱
+		redisCacheService.cacheUserTotalRanking(userId, result);
+
+		return result;
+
+		// TotalRankingResponseDto responseDto =
+		// TotalRankingResponseDto.builder().nickname(currentUser.getNickname())
+		// .profileImageUrl(currentUser.getProfileImageUrl()).badgeImageUrl(badgeImageUrls)
+		// .profit(totalRanking.getProfit()).rank(totalRanking.getTotalRank())
+		// .updatedAt(totalRanking.getUpdatedAt()).build();
+		//
+		// return responseDto;
 	}
 
 	private DailyRankingResponseDto convertToDailyRankingResponse(DailyRanking dailyRanking) {
@@ -193,5 +301,20 @@ public class RankingService {
 						.collect(Collectors.toList()))
 				.profit(totalRanking.getProfit()).rank(totalRanking.getTotalRank())
 				.updatedAt(totalRanking.getUpdatedAt()).build();
+	}
+
+	// 캐시 갱신 메서드
+	private void refreshRankingCache() {
+		// 상위 100개의 일간 랭킹 캐싱
+		List<DailyRanking> dailyRankings = dailyRankingRepository.findTop100ByOrderByDailyRankAsc();
+		List<DailyRankingResponseDto> dailyRankingDtos = dailyRankings.stream().map(this::convertToDailyRankingResponse)
+				.collect(Collectors.toList());
+		redisCacheService.cacheDailyRankings(dailyRankingDtos);
+
+		// 상위 100개의 전체 랭킹 캐싱
+		List<TotalRanking> totalRankings = totalRankingRepository.findTop100ByOrderByTotalRankAsc();
+		List<TotalRankingResponseDto> totalRankingDtos = totalRankings.stream().map(this::convertToTotalRankingResponse)
+				.collect(Collectors.toList());
+		redisCacheService.cacheTotalRankings(totalRankingDtos);
 	}
 }

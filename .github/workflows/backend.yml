@@ -2,7 +2,7 @@ name: Backend CI/CD
 
 on:
   push:
-    branches: [ "fix/backend.yml" ]
+    branches: [ "main" ]
 
 jobs:
   build-and-deploy:

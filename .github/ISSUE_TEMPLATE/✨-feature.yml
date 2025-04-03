@@ -1,0 +1,66 @@
+name: "✨ Feature"
+description: "새로운 기능 제안"
+title: "[FEAT] "
+labels: ["✨ feat", "🧑‍💻 backend"]
+projects: "@KONO"
+type: "Feature"
+assignees: []
+body:
+  - type: textarea
+    attributes:
+      label: 📝 어떤 기능인가요?
+      description: 추가하려는 기능에 대한 설명을 작성해 주세요.
+      placeholder: 자세히 적을수록 좋습니다!
+    validations:
+      required: true
+      
+  - type: checkboxes
+    id: feature-type
+    attributes:
+      label: 🔎 기능 유형
+      description: 이 기능은 어떤 유형인가요? (해당하는 모든 항목 선택)
+      options:
+        - label: 🚀 새로운 핵심 기능
+        - label: 🧩 기존 기능 개선
+        - label: 🎨 UI/UX 개선 
+        - label: 🔧 리팩토링
+        - label: 📈 성능 개선
+        - label: 📱 반응형/모바일 대응
+        - label: 🌐 접근성 개선
+    validations:
+      required: true
+      
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 🔥 우선순위
+      description: 이 기능의 중요도는 어느 정도인가요?
+      options:
+        - 🚨 Critical (핵심 기능, 즉시 필요)
+        - 🔴 High (중요 기능, 가능한 빨리)
+        - 🟠 Medium (일반 기능, 계획대로 진행)
+        - 🟢 Low (부가 기능, 여유있게 진행)
+    validations:
+      required: true
+      
+  - type: textarea
+    attributes:
+      label: ✅ 작업할 내용
+      description: 할 일을 체크박스 형태로 작성해주세요.
+      value: |
+        - [ ] 작업 1
+        - [ ] 작업 2
+        - [ ] 작업 3
+      
+  - type: input
+    id: estimated-time
+    attributes:
+      label: ⏱️ 예상 소요 시간
+      description: 이 작업에 예상되는 소요 시간을 입력해주세요.
+      placeholder: 예) 3일, 1주일, 2주일
+      
+  - type: textarea
+    attributes:
+      label: 🔗 참고 자료
+      description: 참고 자료가 있다면 작성해 주세요.
+      placeholder: 디자인 가이드, API 문서, 유사 사례 등

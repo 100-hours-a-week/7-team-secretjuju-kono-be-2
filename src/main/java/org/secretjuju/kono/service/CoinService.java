@@ -108,7 +108,7 @@ public class CoinService {
 		transaction.setOrderPrice(coinSellBuyRequestDto.getOrderPrice());
 		transaction.setOrderAmount(coinSellBuyRequestDto.getOrderAmount());
 		transaction.setCreatedAt(ZonedDateTime.now(ZoneId.of("Asia/Seoul"))); // 거래 시간
-		currentUser.addTransaction(transaction);
+		currentUser.addTransaction(transaction); // 트랜잭션 페이지에 추가하는 작업 연관관계로 묶여있는걸로 접근
 
 		// 거래 타입에 따라 코인 보유량과 현금 잔액을 업데이트합니다.
 		if ("buy".equalsIgnoreCase(coinSellBuyRequestDto.getOrderType())) {
@@ -171,7 +171,7 @@ public class CoinService {
 	private void processBuy(User user, CoinInfo coinInfo, CoinSellBuyRequestDto request) {
 		// 현금 잔액 락 획득
 		CashBalance cashBalance = cashBalanceRepository.findByUserWithLock(user).orElseGet(() -> {
-			CashBalance newBalance = new CashBalance();
+			CashBalance newBalance = new CashBalance(); // 만약 cashbalance가 없다면 새롭게 맵핑
 			user.setCashBalance(newBalance);
 			return newBalance;
 		});

@@ -7,6 +7,7 @@ import java.util.Map;
 
 import org.secretjuju.kono.security.CustomAuthenticationEntryPoint;
 import org.secretjuju.kono.service.OAuth2UserService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.MediaType;
@@ -41,6 +42,9 @@ public class SecurityConfig {
 	private final ClientRegistrationRepository clientRegistrationRepository;
 	private final ObjectMapper objectMapper;
 
+	@Value("${frontend.redirect-uri}")
+	private String frontendRedirectUri;
+
 	@Bean
 	public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 		http.csrf(AbstractHttpConfigurer::disable)
@@ -57,7 +61,7 @@ public class SecurityConfig {
 						.successHandler(successHandler())
 						.authorizationEndpoint(authorization -> authorization
 								.authorizationRequestResolver(customAuthorizationRequestResolver()))
-						.defaultSuccessUrl("http://localhost:5173", true));
+						.defaultSuccessUrl(frontendRedirectUri, true));
 		return http.build();
 	}
 
@@ -76,7 +80,7 @@ public class SecurityConfig {
 	@Bean
 	public CorsConfigurationSource corsConfigurationSource() {
 		CorsConfiguration configuration = new CorsConfiguration();
-		configuration.setAllowedOrigins(Arrays.asList("http://localhost:5173")); // 프론트엔드 주소
+		configuration.setAllowedOrigins(Arrays.asList(frontendRedirectUri, "http://localhost:4173")); // 프론트엔드 주소
 		configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
 		configuration.setAllowedHeaders(Arrays.asList("*"));
 		configuration.setAllowCredentials(true);

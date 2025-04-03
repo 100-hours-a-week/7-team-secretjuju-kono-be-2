@@ -1,0 +1,108 @@
+name: "🐞 Bug"
+description: "버그 제보"
+title: "[BUG] "
+labels: ["🐞 bug", "🧑‍💻 backend"]
+projects: "@KONO"
+assignees: []
+type: "Bug"
+body:
+  - type: textarea
+    attributes:
+      label: 🐞 버그 설명
+      description: 버그에 대한 명확하고 간결한 설명을 작성해주세요
+      placeholder: 자세히 적을수록 좋습니다!
+    validations:
+      required: true
+  
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 🔥 우선순위
+      description: 이 버그의 심각도는 어느 정도인가요?
+      options:
+        - 🚨 Critical (서비스 중단, 데이터 손실)
+        - 🔴 High (주요 기능 장애)
+        - 🟠 Medium (기능 저하)
+        - 🟢 Low (경미한 UI 문제, 가독성 등)
+    validations:
+      required: true
+  
+  - type: textarea
+    attributes:
+      label: 🔄 재현 방법
+      description: 버그를 재현하기 위한 단계별 과정을 작성해주세요
+      value: |
+        1. 
+        2. 
+        3. 
+  
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: 📊 재현 빈도
+      description: 이 버그가 얼마나 자주 발생하나요?
+      options:
+        - 항상 발생 (100%)
+        - 대부분 발생 (약 75%)
+        - 가끔 발생 (약 50%)
+        - 드물게 발생 (약 25%)
+        - 한 번만 발생
+  
+  - type: textarea
+    attributes:
+      label: 🤔 예상 동작
+      description: 어떤 동작이 일어날 것으로 예상했는지 명확하게 설명해주세요
+      placeholder: 정상 작동시 어떻게 동작해야 하는지 설명해주세요
+  
+  - type: textarea
+    attributes:
+      label: 📸 스크린샷
+      description: 해당하는 경우, 문제를 설명하는 데 도움이 되는 스크린샷을 추가해주세요
+      placeholder: 스크린샷을 이곳에 드래그 앤 드롭하세요
+  
+  - type: checkboxes
+    id: operating-systems
+    attributes:
+      label: 무슨 OS를 사용하셨나요?
+      description: 하나 이상을 선택해주세요.
+      options:
+        - label: macOS
+        - label: Windows
+        - label: Linux
+        - label: iOS
+        - label: Android
+  
+  - type: dropdown
+    id: browsers
+    attributes:
+      label: 무슨 브라우저를 사용하셨나요?
+      description: 해당하는 브라우저를 선택해주세요
+      options:
+        - Chrome
+        - Firefox
+        - Safari
+        - Edge
+        - Opera
+        - 기타 (아래에 명시해주세요)
+    validations:
+      required: false
+  
+  - type: input
+    id: browser-version
+    attributes:
+      label: 브라우저 버전
+      description: 사용 중인 브라우저의 버전을 입력해주세요
+      placeholder: e.g. Chrome 121.0.6167.85
+  
+  - type: input
+    id: device
+    attributes:
+      label: 📱 디바이스 정보
+      description: 모바일 환경에서 발생한 경우, 디바이스 모델명과 OS 버전을 입력해주세요
+      placeholder: e.g. iPhone 15 Pro, iOS 17.3.1
+  
+  - type: textarea
+    attributes:
+      label: 📝 추가 정보
+      description: 문제에 대한 기타 정보나 로그를 여기에 추가해주세요
+      placeholder: 콘솔 에러 로그나 관련 환경 정보를 제공해주시면 디버깅에 도움이 됩니다

@@ -10,7 +10,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
+    show-sql: false
     database-platform: org.hibernate.dialect.MySQLDialect
 
   security:
@@ -25,7 +25,6 @@ spring:
             scope:
               - profile_nickname
               - profile_image
-
         provider:
           kakao:
             authorization-uri: https://kauth.kakao.com/oauth/authorize?prompt=login
@@ -36,9 +35,8 @@ spring:
   web:
     cors:
       allowed-origins:
-        - https://dev.playkono.com
+        - ${FRONTEND_REDIRECT_URI}
         - http://localhost:5173  # 개발 환경용
-        - http://localhost:4173
       allowed-methods:
         - GET
         - POST
@@ -67,9 +65,8 @@ cloud:
       bucket: ${AWS_BUCKET_NAME}
       base-url: ${CLOUDFRONT_URL}
       allowed-origins:
-        - https://dev.playkono.com
+        - ${FRONTEND_REDIRECT_URI}
         - http://localhost:5173
-        - http://localhost:4173
 
 thymeleaf:
   enabled: true
@@ -77,6 +74,7 @@ thymeleaf:
   suffix: .html
   cache: false
   check-template-location: true
+
 mvc:
   view:
     prefix: /templates/
@@ -84,8 +82,11 @@ mvc:
 
 logging:
   level:
-    org.springframework.security: DEBUG
-    org.springframework.web.client.RestTemplate: DEBUG
+    org.springframework.security: INFO
+    org.springframework.web.client.RestTemplate: INFO
+    org.hibernate: ERROR
+    org.hibernate.SQL: ERROR
+    org.hibernate.type.descriptor.sql: ERROR
 
 server:
   port: 8080  # Nginx에서 리버스 프록시로 사용할 포트
@@ -94,7 +95,7 @@ server:
     session:
       timeout: 30m  # 세션 만료 시간
       cookie:
-        name:   SESSIONID
+        name: SESSIONID
         http-only: true
         secure: false  # HTTPS 사용시 true로 변경
       tracking-modes: cookie  # URL 재작성 비활성화
@@ -109,5 +110,21 @@ upbit:
 
 # 프로덕션 환경 설정 추가
 custom:
-  domain: https://dev.playkono.com
+  domain: ${FRONTEND_REDIRECT_URI}
   production: true
+
+# 여기서부터 project
+project:
+  success-url:
+    main: ${SUCCESS_URL_MAIN:https://www.playkono.com}
+    dev:  ${SUCCESS_URL_DEV:https://dev.playkono.com}
+    local: ${SUCCESS_URL_LOCAL:http://localhost:5173}
+
+  allow-origin:
+    main: ${ALLOW_ORIGIN_MAIN:https://www.playkono.com}
+    dev:  ${ALLOW_ORIGIN_DEV:https://dev.playkono.com}
+    local: ${ALLOW_ORIGIN_LOCAL:http://localhost:5173}
+
+frontend:
+  redirect-uri: ${FRONTEND_REDIRECT_URI}
+

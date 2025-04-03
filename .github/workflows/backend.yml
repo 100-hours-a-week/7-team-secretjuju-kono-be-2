@@ -28,7 +28,7 @@ jobs:
 
     - name: Ensure backend directory exists on EC2
       run: |
-        ssh -i key.pem -o StrictHostKeyChecking=no ubuntu@43.202.247.79 "mkdir -p /home/ubuntu/b
+        ssh -i key.pem -o StrictHostKeyChecking=no ubuntu@43.202.247.79 "mkdir -p /home/ubuntu/backend"
         
     - name: Upload JAR to EC2 with temp name and rename to app.jar
       run: |

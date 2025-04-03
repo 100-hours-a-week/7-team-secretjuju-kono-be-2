@@ -36,7 +36,8 @@ spring:
   web:
     cors:
       allowed-origins:
-        - https://dev.playkono.com
+        - https://www.playkono.com
+        - https://playkono.com
         - http://localhost:5173  # 개발 환경용
         - http://localhost:4173
       allowed-methods:
@@ -61,7 +62,8 @@ cloud:
       bucket: ${AWS_BUCKET_NAME}
       base-url: ${CLOUDFRONT_URL}
       allowed-origins:
-        - https://dev.playkono.com
+        - https://www.playkono.com
+        - https://playkono.com
         - http://localhost:5173
         - http://localhost:4173
 
@@ -103,5 +105,5 @@ upbit:
 
 # 프로덕션 환경 설정 추가
 custom:
-  domain: https://dev.playkono.com
+  domain: https://www.playkono.com
   production: true

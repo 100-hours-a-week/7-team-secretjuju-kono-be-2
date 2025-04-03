@@ -28,20 +28,20 @@ jobs:
 
     - name: Ensure backend directory exists on EC2
       run: |
-        ssh -i key.pem -o StrictHostKeyChecking=no ubuntu@43.202.247.79 "mkdir -p /home/ubuntu/backend"
+        ssh -i key.pem -o StrictHostKeyChecking=no ubuntu@3.36.226.164 "mkdir -p /home/ubuntu/backend"
 
     - name: Upload JAR to EC2 with temp name and rename to app.jar
       run: |
-        scp -i key.pem -o StrictHostKeyChecking=no build/libs/*.jar ubuntu@43.202.247.79:/home/ubuntu/backend/temp.jar
-        ssh -i key.pem -o StrictHostKeyChecking=no ubuntu@43.202.247.79 "mv /home/ubuntu/backend/temp.jar /home/ubuntu/backend/app.jar"
+        scp -i key.pem -o StrictHostKeyChecking=no build/libs/*.jar ubuntu@3.36.226.164:/home/ubuntu/backend/temp.jar
+        ssh -i key.pem -o StrictHostKeyChecking=no ubuntu@3.36.226.164 "mv /home/ubuntu/backend/temp.jar /home/ubuntu/backend/app.jar"
 
     - name: Upload application.yml to EC2
       run: |
-        scp -i key.pem -o StrictHostKeyChecking=no src/main/resources/application.yml ubuntu@43.202.247.79:/home/ubuntu/backend/
+        scp -i key.pem -o StrictHostKeyChecking=no src/main/resources/application.yml ubuntu@3.36.226.164:/home/ubuntu/backend/
 
     - name: SSH & Restart Spring Boot App
       run: |
-        ssh -i key.pem -o StrictHostKeyChecking=no ubuntu@43.202.247.79 << 'EOF'
+        ssh -i key.pem -o StrictHostKeyChecking=no ubuntu@3.36.226.164 << 'EOF'
         cd /home/ubuntu/backend
 
         # 종료할 프로세스 찾고 종료

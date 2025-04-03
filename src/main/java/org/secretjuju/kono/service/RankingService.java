@@ -136,12 +136,6 @@ public class RankingService {
 	// 일간 랭킹 조회
 	@Transactional(readOnly = true)
 	public List<DailyRankingResponseDto> getDailyRanking() {
-		// 일간 랭킹 상위 100개 조회
-		// List<DailyRanking> dailyRankings =
-		// dailyRankingRepository.findTop100ByOrderByDailyRankAsc();
-		//
-		// return
-		// dailyRankings.stream().map(this::convertToDailyRankingResponse).collect(Collectors.toList());
 
 		// Redis 캐시에서 먼저 조회
 		List<DailyRankingResponseDto> cachedRankings = redisCacheService.getDailyRankings();
@@ -168,12 +162,6 @@ public class RankingService {
 
 	// 전체 랭킹 조회
 	public List<TotalRankingResponseDto> getTotalRanking() {
-		// 전체 랭킹 상위 100개 조회
-		// List<TotalRanking> totalRankings =
-		// totalRankingRepository.findTop100ByOrderByTotalRankAsc();
-		//
-		// return
-		// totalRankings.stream().map(this::convertToTotalRankingResponse).collect(Collectors.toList());
 
 		// Redis 캐시에서 먼저 조회
 		List<TotalRankingResponseDto> cachedRankings = redisCacheService.getTotalRankings();
@@ -218,7 +206,6 @@ public class RankingService {
 			DailyRanking newRanking = new DailyRanking(currentUser);
 			return dailyRankingRepository.save(newRanking);
 		});
-		// .orElseThrow(() -> new EntityNotFoundException("랭킹 정보를 찾을 수 없습니다."));
 
 		List<String> badgeImageUrls = currentUser.getBadges().stream().map(Badge::getBadgeImageUrl)
 				.collect(Collectors.toList());
@@ -232,14 +219,6 @@ public class RankingService {
 		redisCacheService.cacheUserDailyRanking(userId, result);
 
 		return result;
-
-		// DailyRankingResponseDto responseDto =
-		// DailyRankingResponseDto.builder().nickname(currentUser.getNickname())
-		// .profileImageUrl(currentUser.getProfileImageUrl()).badgeImageUrl(badgeImageUrls)
-		// .profitRate(dailyRanking.getProfitRate()).rank(dailyRanking.getDailyRank())
-		// .updatedAt(dailyRanking.getUpdatedAt()).build();
-		//
-		// return responseDto;
 	}
 
 	// 현재 사용자의 전체 랭킹 조회
@@ -263,7 +242,6 @@ public class RankingService {
 			TotalRanking newRanking = new TotalRanking(currentUser);
 			return totalRankingRepository.save(newRanking);
 		});
-		// .orElseThrow(() -> new EntityNotFoundException("랭킹 정보를 찾을 수 없습니다."));
 
 		List<String> badgeImageUrls = currentUser.getBadges().stream().map(Badge::getBadgeImageUrl)
 				.collect(Collectors.toList());
@@ -277,14 +255,6 @@ public class RankingService {
 		redisCacheService.cacheUserTotalRanking(userId, result);
 
 		return result;
-
-		// TotalRankingResponseDto responseDto =
-		// TotalRankingResponseDto.builder().nickname(currentUser.getNickname())
-		// .profileImageUrl(currentUser.getProfileImageUrl()).badgeImageUrl(badgeImageUrls)
-		// .profit(totalRanking.getProfit()).rank(totalRanking.getTotalRank())
-		// .updatedAt(totalRanking.getUpdatedAt()).build();
-		//
-		// return responseDto;
 	}
 
 	private DailyRankingResponseDto convertToDailyRankingResponse(DailyRanking dailyRanking) {

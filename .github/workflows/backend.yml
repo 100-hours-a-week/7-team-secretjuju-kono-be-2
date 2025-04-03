@@ -29,7 +29,7 @@ jobs:
         
     - name: Register Public Key on EC2
       run: |
-        ssh -i key.pem -o StrictHostKeyChecking=no ubuntu@3.36.226.164 "
+        ssh -i key.pem -o StrictHostKeyChecking=no ubuntu@43.202.247.79 "
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           touch ~/.ssh/authorized_keys
           grep -qxF \"$(cat id_rsa.pub)\" ~/.ssh/authorized_keys || echo \"$(cat id_rsa.pub)\" >> ~/.ssh/authorized_keys
@@ -37,11 +37,11 @@ jobs:
         "
       
     - name: SCP JAR to EC2
-      run: scp -i key.pem -o StrictHostKeyChecking=no build/libs/*.jar ubuntu@3.36.226.164:/home/ubuntu/backend/
+      run: scp -i key.pem -o StrictHostKeyChecking=no build/libs/*.jar ubuntu@43.202.247.79:/home/ubuntu/backend/
 
     - name: SSH & Restart Service
       run: |
-        ssh -v -i key.pem -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@3.36.226.164 "
+        ssh -v -i key.pem -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@43.202.247.79 "
           sh -c '
             set +e
             pkill -f "java -jar" || true

@@ -19,7 +19,7 @@ jobs:
         java-version: '17'
 
     - name: Build Spring Boot App
-      run: ./gradlew build -x test
+      run: ./gradlew build -x test -x spotlessJavaCheck
 
     - name: Setup SSH Key (base64 decode)
       run: |

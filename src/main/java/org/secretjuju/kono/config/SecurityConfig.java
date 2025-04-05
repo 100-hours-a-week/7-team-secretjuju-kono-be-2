@@ -76,7 +76,8 @@ public class SecurityConfig {
 	@Bean
 	public CorsConfigurationSource corsConfigurationSource() {
 		CorsConfiguration configuration = new CorsConfiguration();
-		configuration.setAllowedOrigins(Arrays.asList("https://www.playkono.com", "https://playkono.com", "http://localhost:4173")); // 프론트엔드 주소
+		configuration
+				.setAllowedOrigins(Arrays.asList(frontendRedirectUri, "http://localhost:4173",  "http://www.playkono.com", "https://www.playkono.com", cloudFrontRedirectUri, )); // 프론트엔드
 		configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
 		configuration.setAllowedHeaders(Arrays.asList("*"));
 		configuration.setAllowCredentials(true);

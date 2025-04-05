@@ -40,7 +40,7 @@ out/
 node_modules
 
 ### env ###
-dev.env
+.env
 
 hello.env
 src/main/resources/hello.env

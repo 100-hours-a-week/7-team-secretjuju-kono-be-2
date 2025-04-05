@@ -107,3 +107,18 @@ upbit:
 custom:
   domain: https://www.playkono.com
   production: true
+
+# 여기서부터 project
+project:
+  success-url:
+    main: ${SUCCESS_URL_MAIN:https://www.playkono.com}
+    local: ${SUCCESS_URL_LOCAL:http://localhost:5173}
+
+  allow-origin:
+    main: ${ALLOW_ORIGIN_MAIN:https://www.playkono.com}
+    local: ${ALLOW_ORIGIN_LOCAL:http://localhost:5173}
+
+frontend:
+  redirect-uri: ${FRONTEND_REDIRECT_URI}
+  cloud-front: ${CLOUD_FRONT_URL}
+
